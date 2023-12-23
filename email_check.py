@@ -403,7 +403,7 @@ class dmarc_check:
         #this exception will only trigger if num_of_trys is less than retries - i.e it tried 5 times
         raise Exception(f"Failed to query {endpoint} after 5 retries. Last HTTP status code: {response.status_code} - {response.reason} - {response.text}")
       
-def do_all_checks(domain:str, selector:str|list=None):
+def do_all_checks(domain:str, selector:str|list=None) -> dict:
     """
     Runs all checks for a domain.
     Returns a dictionary of the results.
@@ -414,21 +414,58 @@ def do_all_checks(domain:str, selector:str|list=None):
     results["spf"] = spf_check(domain)
     results["dmarc"] = dmarc_check(domain)
     return results
+
+def print_into_coulmns(list_:list, num_columns:int=2, colour:str=""):
+    """
+    Prints a list into the provided number of columns.
+    """
+    if type(list_) is not list:
+        raise Exception(f"Argument 'list' must be a list data type. - {type(list_)}")
     
+    if type(num_columns) is not int:
+        raise Exception("Argument 'num_columns' must be an integer data type.")
+
+    # Calculate the number of rows needed
+    num_rows = -(-len(list_) // num_columns)
+
+    # Iterate through the rows and print the list items into columns
+    for row in range(num_rows):
+        for col in range(num_columns):
+            index = row + col * num_rows
+            if index < len(list_):
+                print(f"{colour}{list_[index]:<20}", end="")
+        print()  # Move to the next line for the next row
+
 def main():
     parser = argparse.ArgumentParser(description='')
     parser.add_argument('-d', '--domain', dest='domain', help='Domain Name you want to test.', required=True)
     parser.add_argument('-s', '--selector', dest='selector', help='DKIM Selector, can be extracted from email.', required=False)
+    parser.add_argument('-v', '--verbose', dest='verbose', help='Print detailed results.', action='store_true', required=False)
+    #parser.add_argument('-j', '--json', dest='json', help='Print results in JSON format.', action='store_true', required=False)
+    #parser.add_argument('-o', '--output', dest='output', help='Output results to a file.', required=False)
     args = parser.parse_args()
+
+    #if -j used, default will be use json.dumps to print to stdout
+    #if -o used, default will be print to file
+    #if -v used, default will be print detailed results
+
+    #if -o and -j used, default will be print to file in json format
+    #if -o and -v used, default will be print to file in detailed format
+
+    #if -j and -v used, raise exception
+    #if args.json and args.verbose:
+    #    raise Exception("Cannot use both -j (--json) and -v (--verbose) arguments.")
+    
+
 
     OKGREEN = '\033[92m'
     OKBLUE = '\033[94m'
     OKCYAN = '\033[96m'
     ENDC = '\033[0m'
     FAIL = '\033[91m'
-    BLINK = '\033[6m'
     PURPLE = '\033[95m'
     WARNING = '\033[93m'
+    UNDERLINE_BLUE = '\033[4;34m'
 
 
     #dkim = dkim_check("rsolutions.com")
@@ -439,40 +476,66 @@ def main():
     
     #dmarc = dmarc_check("rsolutions.com")
     #print(f"{dmarc.domain} - Result: {dmarc.result} - Warnings: {dmarc.warnings} - Failures: {dmarc.failures} - Passed: {dmarc.passed}")
+
+    list_indent = " -  "
+    indent = "    "
     print(f"[*] Running DMARC, DKIM, and SPF checks for {str(args.domain)}...")
+    
     if args.selector:
-        print(f"[*] Using DKIM selector {str(args.selector)}")
+        print(f"[*] Using DKIM selector {PURPLE}{str(args.selector)}{ENDC}")
         results = do_all_checks(str(args.domain), str(args.selector))
+
     else:
         results = do_all_checks(str(args.domain))
+        #print DKIM selectors found for the domain
+        print(f"[*] Found {len(results['dkim'].selectors)} DKIM selector(s) for {str(args.domain)}:")
+        
+        selector_names = []
+        for selector in results['dkim'].selectors:
+            selector_names.append(str(selector['name']))
+        print_into_coulmns(selector_names, colour=f"{list_indent}{PURPLE}")
 
+    #Pretty DKIM Results
+    if results["dkim"].result == "FAIL":
+        print(f"{ENDC}[*] DKIM Check: {FAIL}{results['dkim'].result}{ENDC}")
+    else:
+        print(f"{ENDC}[*] DKIM Check: {OKGREEN}{results['dkim'].result}{ENDC}")
+    
+    if args.verbose:
+        for selector in results['dkim'].selectors:
+            print(f"{indent}{UNDERLINE_BLUE}{selector['name']}:{ENDC}")
+            print(f"{indent}{indent}{FAIL}Failed: {ENDC}{selector['failed']}")
+            print(f"{indent}{indent}{WARNING}Warnings: {ENDC}{selector['warnings']}")
+            print(f"{indent}{indent}{OKBLUE}Passed: {ENDC}")
+            for pass_check in selector['passed']:
+                print(f"{indent}{indent}{indent}{OKGREEN}* {OKCYAN}{pass_check['Name']}{ENDC}")
+    
     #Pretty SPF Results    
     if results["spf"].result == "FAIL":
-        print(f"[*] SPF Check: {FAIL}{results['spf'].result}{ENDC}")
+        print(f"{ENDC}[*] SPF Check: {FAIL}{results['spf'].result}{ENDC}")
     else:
-        print(f"[*] SPF Check: {OKGREEN}{results['spf'].result}{ENDC}")
-    print(f"    {FAIL}Failures: {ENDC}{results['spf'].failures}")
-    print(f"    {WARNING}Warnings: {ENDC}{results['spf'].warnings}")
-    print(f"    {OKBLUE}Passed: {ENDC}")
-    for pass_check in results['spf'].passed:
-        print(f"         {OKGREEN}* {OKCYAN}{pass_check['Name']}{ENDC}")
-    #print(f"    Passed: {results['spf'].passed}")
-    #Pretty DKIM Results
-    print(f"[*] DKIM Check: {OKGREEN}{results['dkim'].result}{ENDC}")
+        print(f"{ENDC}[*] SPF Check: {OKGREEN}{results['spf'].result}{ENDC}")
+    
+    if args.verbose:
+        print(f"{indent}{FAIL}Failed: {ENDC}{results['spf'].failures}")
+        print(f"{indent}{WARNING}Warnings: {ENDC}{results['spf'].warnings}")
+        print(f"{indent}{OKBLUE}Passed: {ENDC}")
+        for pass_check in results['spf'].passed:
+            print(f"{indent}{indent}{OKGREEN}* {OKCYAN}{pass_check['Name']}{ENDC}")
     
     #Pretty DMARC Results
-    print(f"[*] DMARC Check: {OKGREEN}{results['dmarc'].result}{ENDC}")
+    if results["dmarc"].result == "FAIL":
+        print(f"{ENDC}[*] DMARC Check: {FAIL}{results['dmarc'].result}{ENDC}")
+    else:
+        print(f"{ENDC}[*] DMARC Check: {OKGREEN}{results['dmarc'].result}{ENDC}")
 
-    #TODO
-    #finish pretty printing detailed results
-        #if failures, print the failures in FAIL colour
-        #if warnings, print the warnings in WARNING colour
-        #if passed, print the passed in OKBLUE colour
-        #etc
-    #maybe add a verbose option to print detailed results
-    #maybe add a json option to print results in json format
+    if args.verbose:
+        print(f"{indent}{FAIL}Failed: {ENDC}{results['dmarc'].failures}")
+        print(f"{indent}{WARNING}Warnings: {ENDC}{results['dmarc'].warnings}")
+        print(f"{indent}{OKBLUE}Passed: {ENDC}")
+        for pass_check in results['dmarc'].passed:
+            print(f"{indent}{indent}{OKGREEN}* {OKCYAN}{pass_check['Name']}{ENDC}")
     
-    pass
 if __name__ == "__main__":
     main()
 
@@ -489,5 +552,16 @@ if __name__ == "__main__":
         # - reduces the need to re-create the query function for each check, also gets rid of the domain
         #   check in each __init__ 
         # - queries to "https://mxtoolbox.com/api/v1/user" for a temp auth key can be done once and stored
+        # - dynamically output results if all checks use the same attributes/format
+    
+    #add option to output in json
+    #add option to output to file
+        #output in json or detailed format to a file
     
     #add a check for the domain's MX records
+
+    #allow users to use their MXToolbox API key instead of generating a temp auth key
+        #requires whole new endpoint for queries
+    
+
+    
