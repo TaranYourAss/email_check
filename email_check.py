@@ -42,7 +42,7 @@ class dkim_check:
         #--CHECK IF PROVIDED SELECTORS ARE VALID--
         
         #selector was specified, so check if it's a list or string
-        elif not isinstance(selector, (str, list)):
+        elif not isinstance(selector, (str, list)): #this checks if selector is a string or a list
             raise Exception(f"Selector must be a list or string. - {selector} - {type(selector)}")
         
         #selector was specified as a string, so convert it to a list of dictionaries for consistency
@@ -151,13 +151,16 @@ class dkim_check:
             }
             response = self.query(dkim_mxtoolbox_url, headers=mxtoolbox_headers)
             mxtoolbox_selector_dkim_lookup_json = response.json()
-            #print(json.dumps(response_json, indent=4, sort_keys=True))
+            #print(json.dumps(response.json(), indent=4, sort_keys=True))
 
             #--SAVE MXTOOLBOX DKIM DATA--
             selector["failed"] = mxtoolbox_selector_dkim_lookup_json["Failed"]
             selector["warnings"] = mxtoolbox_selector_dkim_lookup_json["Warnings"]
             selector["passed"] = mxtoolbox_selector_dkim_lookup_json["Passed"]
-            selector["record-content"] = str(mxtoolbox_selector_dkim_lookup_json["Information"][0]["Description"])
+            if mxtoolbox_selector_dkim_lookup_json["Information"] == []:
+                selector["record-content"] = ""
+            else:
+                selector["record-content"] = str(mxtoolbox_selector_dkim_lookup_json["Information"][0]["Description"])
             selector["information"] = mxtoolbox_selector_dkim_lookup_json["Information"]
             selector["errors"] = mxtoolbox_selector_dkim_lookup_json["Errors"]
             selector["timeouts"] = mxtoolbox_selector_dkim_lookup_json["Timeouts"]
@@ -280,7 +283,10 @@ class spf_check:
             self.failures = spf_response_json["Failed"]
             self.warnings = spf_response_json["Warnings"]
             self.passed = spf_response_json["Passed"]
-            self.record_content = str(spf_response_json["Information"][0]["Description"])
+            if spf_response_json["Information"] == []:
+                self.record_content = ""
+            else:
+                self.record_content = str(spf_response_json["Information"][0]["Description"])
             self.information = spf_response_json["Information"]
             self.errors = spf_response_json["Errors"]
             self.timeouts = spf_response_json["Timeouts"]
@@ -365,7 +371,10 @@ class dmarc_check:
             self.failures = dmarc_response_json["Failed"]
             self.warnings = dmarc_response_json["Warnings"]
             self.passed = dmarc_response_json["Passed"]
-            self.record_content = str(dmarc_response_json["Information"][0]["Description"])
+            if dmarc_response_json["Information"] == []:
+                self.record_content = ""
+            else:
+                self.record_content = str(dmarc_response_json["Information"][0]["Description"])
             self.information = dmarc_response_json["Information"]
             self.errors = dmarc_response_json["Errors"]
             self.timeouts = dmarc_response_json["Timeouts"]
@@ -436,6 +445,7 @@ def print_into_coulmns(list_:list, num_columns:int=2, colour:str=""):
                 print(f"{colour}{list_[index]:<20}", end="")
         print()  # Move to the next line for the next row
 
+
 def main():
     parser = argparse.ArgumentParser(description='')
     parser.add_argument('-d', '--domain', dest='domain', help='Domain Name you want to test.', required=True)
@@ -445,12 +455,12 @@ def main():
     #parser.add_argument('-o', '--output', dest='output', help='Output results to a file.', required=False)
     args = parser.parse_args()
 
-    #if -j used, default will be use json.dumps to print to stdout
-    #if -o used, default will be print to file
-    #if -v used, default will be print detailed results
+    #if only -j used, default will be use json.dumps to print to stdout
+    #if only -o used, default will be print to file
+    #if only -v used, default will be print detailed results
 
-    #if -o and -j used, default will be print to file in json format
-    #if -o and -v used, default will be print to file in detailed format
+    #if -o and -j used, print to file in json format
+    #if -o and -v used, print to file in detailed format
 
     #if -j and -v used, raise exception
     #if args.json and args.verbose:
@@ -466,6 +476,30 @@ def main():
     PURPLE = '\033[95m'
     WARNING = '\033[93m'
     UNDERLINE_BLUE = '\033[4;34m'
+    ORANGE = '\033[33m'
+    BOLD = '\033[1m'
+    BLINK = '\33[6m'
+    
+    list_indent = " -  "
+    indent = "    "
+
+    def print_mxtoolbox_list(data:list, is_selector:bool=False, include_url:bool=False):
+        #prints a list of dictionaries in a pretty format
+        #dictionaries must have "Name", "Info", and "Url" keys - MXToolbox API response format
+        if type(data) is not list:
+            raise Exception(f"Argument 'list' must be a list data type. - {type(data)}")
+        
+        if is_selector == True: #increase indent for selectors
+            for check in data:
+                print(f"{indent * 3}* {check['Name']} - {check['Info']}")
+                
+                if include_url == True:
+                    print(f"{indent * 5}{list_indent}{check['Url']}")
+        else:    
+            for check in data:
+                print(f"{indent * 2}* {check['Name']} - {check['Info']}")
+                if include_url == True:
+                    print(f"{indent * 4}{list_indent}{check['Url']}")
 
 
     #dkim = dkim_check("rsolutions.com")
@@ -477,9 +511,8 @@ def main():
     #dmarc = dmarc_check("rsolutions.com")
     #print(f"{dmarc.domain} - Result: {dmarc.result} - Warnings: {dmarc.warnings} - Failures: {dmarc.failures} - Passed: {dmarc.passed}")
 
-    list_indent = " -  "
-    indent = "    "
-    print(f"[*] Running DMARC, DKIM, and SPF checks for {str(args.domain)}...")
+
+    print(f"[*] Running DMARC, DKIM, and SPF checks for {BLINK}{str(args.domain)}{ENDC}...")
     
     if args.selector:
         print(f"[*] Using DKIM selector {PURPLE}{str(args.selector)}{ENDC}")
@@ -488,8 +521,11 @@ def main():
     else:
         results = do_all_checks(str(args.domain))
         #print DKIM selectors found for the domain
-        print(f"[*] Found {len(results['dkim'].selectors)} DKIM selector(s) for {str(args.domain)}:")
-        
+        if len(results['dkim'].selectors) == 1: 
+            print(f"[*] Found {len(results['dkim'].selectors)} DKIM selector for {str(args.domain)}:")
+        else:
+            print(f"[*] Found {len(results['dkim'].selectors)} DKIM selectors for {str(args.domain)}:")
+        #print all found selectors into columns for space saving
         selector_names = []
         for selector in results['dkim'].selectors:
             selector_names.append(str(selector['name']))
@@ -503,38 +539,102 @@ def main():
     
     if args.verbose:
         for selector in results['dkim'].selectors:
+            print("")
             print(f"{indent}{UNDERLINE_BLUE}{selector['name']}:{ENDC}")
-            print(f"{indent}{indent}{FAIL}Failed: {ENDC}{selector['failed']}")
-            print(f"{indent}{indent}{WARNING}Warnings: {ENDC}{selector['warnings']}")
-            print(f"{indent}{indent}{OKBLUE}Passed: {ENDC}")
-            for pass_check in selector['passed']:
-                print(f"{indent}{indent}{indent}{OKGREEN}* {OKCYAN}{pass_check['Name']}{ENDC}")
+            if selector['record-content'] == "":
+                print(f"{indent}{indent}{OKGREEN}Record Content: {ENDC}None")
+            else:
+                print(f"{indent}{indent}{OKGREEN}Record Content: {ENDC}{selector['record-content']}")
+            print(f"{indent}{indent}{BOLD}Is Test Selector: {ORANGE}{selector['is_testing_selector']}{ENDC}")
+            #FAILED CHECKS
+            if selector['failed'] == []:
+                print(f"{indent}{indent}{FAIL}Failed: {ENDC}[]")
+            else:
+                print(f"{indent}{indent}{FAIL}Failed: {ENDC}")
+                print_mxtoolbox_list(selector['failed'], is_selector=True)
+            #WARNINGS
+            if selector['warnings'] == []:
+                print(f"{indent}{indent}{WARNING}Warnings: {ENDC}[]")
+            else:
+                print(f"{indent}{indent}{WARNING}Warnings: {ENDC}")
+                print_mxtoolbox_list(selector['warnings'], is_selector=True, include_url=True)
+            #PASSED CHECKS
+            if selector['passed'] == []:
+                print(f"{indent}{indent}{OKBLUE}Passed: {ENDC}[]")
+            else:
+                print(f"{indent}{indent}{OKBLUE}Passed: {ENDC}")
+                print_mxtoolbox_list(selector['passed'], is_selector=True, include_url=False)
+
+            print(f"{indent}{indent}{PURPLE}Timeouts: {ENDC}{selector['timeouts']}")
+            print(f"{indent}{indent}{FAIL}Errors: {ENDC}{selector['errors']}")
+            
     
-    #Pretty SPF Results    
+    #Pretty SPF Results
+    print("\n")
     if results["spf"].result == "FAIL":
         print(f"{ENDC}[*] SPF Check: {FAIL}{results['spf'].result}{ENDC}")
     else:
         print(f"{ENDC}[*] SPF Check: {OKGREEN}{results['spf'].result}{ENDC}")
     
     if args.verbose:
-        print(f"{indent}{FAIL}Failed: {ENDC}{results['spf'].failures}")
-        print(f"{indent}{WARNING}Warnings: {ENDC}{results['spf'].warnings}")
-        print(f"{indent}{OKBLUE}Passed: {ENDC}")
-        for pass_check in results['spf'].passed:
-            print(f"{indent}{indent}{OKGREEN}* {OKCYAN}{pass_check['Name']}{ENDC}")
+        if results['spf'].record_content == "":
+            print(f"{indent}{OKGREEN}Record Content: {ENDC}None")
+        else:
+            print(f"{indent}{OKGREEN}Record Content: {ENDC}{results['spf'].record_content}")
+        #FAILED CHECKS
+        if results['spf'].failures == []:
+            print(f"{indent}{FAIL}Failed: {ENDC}[]")
+        else:
+            print(f"{indent}{FAIL}Failed: {ENDC}")
+        for failed_check in results['spf'].failures:
+            print_mxtoolbox_list(results['spf'].failures, include_url=True)
+        #WARNINGS
+        if results['spf'].warnings == []:
+            print(f"{indent}{WARNING}Warnings: {ENDC}[]")
+        else:
+            print(f"{indent}{WARNING}Warnings: {ENDC}")
+            print_mxtoolbox_list(results['spf'].warnings, include_url=True)
+        #PASSED CHECKS
+        if results['spf'].passed == []:
+            print(f"{indent}{OKBLUE}Passed: {ENDC}[]")
+        else:
+            print(f"{indent}{OKBLUE}Passed: {ENDC}")
+            print_mxtoolbox_list(results['spf'].passed, include_url=False)
+        print(f"{indent}{PURPLE}Timeouts: {ENDC}{results['spf'].timeouts}")
+        print(f"{indent}{FAIL}Errors: {ENDC}{results['spf'].errors}")
     
     #Pretty DMARC Results
+    print("\n")
     if results["dmarc"].result == "FAIL":
         print(f"{ENDC}[*] DMARC Check: {FAIL}{results['dmarc'].result}{ENDC}")
     else:
         print(f"{ENDC}[*] DMARC Check: {OKGREEN}{results['dmarc'].result}{ENDC}")
 
     if args.verbose:
-        print(f"{indent}{FAIL}Failed: {ENDC}{results['dmarc'].failures}")
-        print(f"{indent}{WARNING}Warnings: {ENDC}{results['dmarc'].warnings}")
-        print(f"{indent}{OKBLUE}Passed: {ENDC}")
-        for pass_check in results['dmarc'].passed:
-            print(f"{indent}{indent}{OKGREEN}* {OKCYAN}{pass_check['Name']}{ENDC}")
+        if results['dmarc'].record_content == "":
+            print(f"{indent}{OKGREEN}Record Content: {ENDC}None")
+        else:
+            print(f"{indent}{OKGREEN}Record Content: {ENDC}{results['dmarc'].record_content}")
+        #FAILED CHECKS
+        if results['dmarc'].failures == []:
+            print(f"{indent}{FAIL}Failed: {ENDC}[]")
+        else:
+            print(f"{indent}{FAIL}Failed: {ENDC}")
+            print_mxtoolbox_list(results['dmarc'].failures, include_url=True)
+        #WARNINGS
+        if results['dmarc'].warnings == []:
+            print(f"{indent}{WARNING}Warnings: {ENDC}[]")
+        else:
+            print(f"{indent}{WARNING}Warnings: {ENDC}")
+            print_mxtoolbox_list(results['dmarc'].warnings, include_url=True)
+        #PASSED CHECKS
+        if results['dmarc'].passed == []:
+            print(f"{indent}{indent}{OKBLUE}Passed: {ENDC}[]")
+        else:
+            print(f"{indent}{OKBLUE}Passed: {ENDC}")
+            print_mxtoolbox_list(results['dmarc'].passed, include_url=False)
+        print(f"{indent}{PURPLE}Timeouts: {ENDC}{results['dmarc'].timeouts}")
+        print(f"{indent}{FAIL}Errors: {ENDC}{results['dmarc'].errors}")
     
 if __name__ == "__main__":
     main()
@@ -562,6 +662,11 @@ if __name__ == "__main__":
 
     #allow users to use their MXToolbox API key instead of generating a temp auth key
         #requires whole new endpoint for queries
+    
+    #add threading 
+        #multiple domain
+        #multiple selectors
+        #each check a new thread
     
 
     
